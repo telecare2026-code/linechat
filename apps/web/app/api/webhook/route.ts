@@ -5,7 +5,6 @@ import { supabase } from '@/lib/supabase';
 const { MessagingApiClient } = messagingApi;
 
 const channelAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN || '';
-// const channelSecret = process.env.LINE_CHANNEL_SECRET || ''; // Used for signature validation
 
 const client = new MessagingApiClient({
     channelAccessToken,
@@ -34,29 +33,58 @@ export async function POST(req: NextRequest) {
 }
 
 async function handleEvent(event: WebhookEvent) {
-    if (event.type !== 'message' || event.message.type !== 'text') {
+    // Handle text messages
+    if (event.type !== 'message') {
         return;
     }
 
     const userId = event.source.userId;
-    const text = event.message.text;
-
     if (!userId) return;
 
-    // 1. Get or Create Customer
-    // We use simple upsert logic. In real app, might want to fetch profile from LINE first.
-    let { data: customer, error: customerError } = await supabase
+    // Get message content
+    let messageContent = '';
+    let messageType = 'text';
+
+    if (event.message.type === 'text') {
+        messageContent = event.message.text;
+        messageType = 'text';
+    } else if (event.message.type === 'image') {
+        messageContent = '[Image]';
+        messageType = 'image';
+    } else if (event.message.type === 'sticker') {
+        messageContent = '[Sticker]';
+        messageType = 'sticker';
+    } else {
+        messageContent = `[${event.message.type}]`;
+        messageType = event.message.type;
+    }
+
+    // 1. Get or Create Customer with REAL profile from LINE
+    let { data: customer } = await supabase
         .from('customers')
         .select('id')
         .eq('line_user_id', userId)
         .single();
 
     if (!customer) {
+        // Fetch real profile from LINE
+        let displayName = 'LINE User';
+        let avatarUrl = null;
+
+        try {
+            const profile = await client.getProfile(userId);
+            displayName = profile.displayName;
+            avatarUrl = profile.pictureUrl || null;
+        } catch (profileError) {
+            console.error('Error fetching LINE profile:', profileError);
+        }
+
         const { data: newCustomer, error: insertError } = await supabase
             .from('customers')
             .insert({
                 line_user_id: userId,
-                display_name: `User ${userId.substring(0, 4)}`
+                display_name: displayName,
+                avatar_url: avatarUrl
             })
             .select('id')
             .single();
@@ -75,8 +103,8 @@ async function handleEvent(event: WebhookEvent) {
             .insert({
                 customer_id: customer.id,
                 sender_type: 'customer',
-                message_type: 'text',
-                content: text,
+                message_type: messageType,
+                content: messageContent,
                 payload: event
             });
 
