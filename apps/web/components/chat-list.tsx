@@ -1,9 +1,14 @@
+'use client';
+
 import React from 'react';
 import { FixedSizeList } from 'react-window';
-import AutoSizer from 'react-virtualized-auto-sizer';
 import { format } from 'date-fns';
 import { useChatStore } from '@/store/useChatStore';
 import { cn } from '@/lib/utils';
+
+// Dynamic import for AutoSizer to avoid SSR issues
+import dynamic from 'next/dynamic';
+const AutoSizer = dynamic(() => import('react-virtualized-auto-sizer'), { ssr: false });
 
 export function ChatList() {
     const { chatSessions, selectedChatId, setSelectedChatId } = useChatStore();
